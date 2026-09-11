@@ -107,90 +107,6 @@ namespace QTP.Plugins
             _nameGenerator = nameGenerator;
         }
 
-        public static Task<bool> IsPageTop(IPage page)
-        {
-            return page.EvaluateAsync<bool>("window.pageYOffset == 0;");
-        }
-        public static Task<bool> IsPageEnd(IPage page)
-        {
-            return page.EvaluateAsync<bool>("(window.innerHeight + window.pageYOffset) >= document.body.offsetHeight || Math.abs((window.innerHeight + window.pageYOffset) - document.body.offsetHeight) < 10;");
-        }
-
-        public async Task BrowseForAsync(WorkerRunContext ctx, int minTimes = 3, int maxTimes = 8, CancellationToken token = default)
-        {
-            //await ctx.human!.BrowseForAsync(
-            //    ctx.Page!,
-            //    ctx.CdpSession!,
-            //    duration: TimeSpan.FromSeconds(CommonHelper.RandomRange(minSeconds, maxSeconds)),
-            //    cancellationToken: token);
-
-            await ctx.human!.BrowseTimesAsync(
-                ctx.Page!,
-                ctx.CdpSession!,
-                minTimes: minTimes,
-                maxTimes: maxTimes,
-                cancellationToken: token);
-
-        }
-
-        public async Task BrowseForAsync(WorkerRunContext ctx, TimeSpan duration, CancellationToken token = default)
-        {
-            await ctx.human!.BrowseForAsync(
-                ctx.Page!,
-                ctx.CdpSession!,
-                duration: duration,
-                cancellationToken: token);
-        }
-
-
-        public async Task BrowseTimesAsync(WorkerRunContext ctx,
-            int minTimes = 2,
-            int maxTimes = 5,
-            CancellationToken token = default)
-        {
-            await ctx.human!.BrowseTimesAsync(
-                ctx.Page!,
-                ctx.CdpSession!,
-                minTimes: minTimes,
-                maxTimes: maxTimes,
-                cancellationToken: token);
-
-        }
-
-        public static async Task<bool> IsElementInViewportAsync(ILocator locator)
-        {
-            if (!await locator.IsVisibleAsync())
-            {
-                return false;
-            }
-            return await locator.EvaluateAsync<bool>(@"(element) => {
-            const rect = element.getBoundingClientRect();
-            return (
-              rect.top >= 0 &&
-              rect.left >= 0 &&
-              rect.bottom <= (window.innerHeight || document.documentElement.clientHeight) &&
-              rect.right <= (window.innerWidth || document.documentElement.clientWidth));
-             }");
-        }
-
-        public static async Task<List<ILocator>> GetVisibleElementsAsync(ILocator locator)
-        {
-            var result = new List<ILocator>();
-
-            int count = await locator.CountAsync();
-            if (count == 0)
-                return result;
-            for (int i = 0; i < count; i++)
-            {
-                var el = locator.Nth(i);
-                if (await IsElementInViewportAsync(el))
-                {
-                    result.Add(el);
-                }
-            }
-            return result;
-        }
-
         private static List<string> InitFPArgs(JToken taskArgs, int maxTouchPoints)
         {
             var result = new List<string>();
@@ -907,10 +823,8 @@ namespace QTP.Plugins
                     //entry.FirstPageUrl = "https://abrahamjuliot.github.io/creepjs/";
                     //entry.FirstPageUrl = "https://adtomall.cn/content/pixelscan/r2/";
                     //entry.FirstPageUrl = "https://t1.publicis-groupe.cn/hat?_t=r&type=clk&v=1&_z=m&_inst=saas&hat_id=aaaaaabbbbb&_ms=0&_dt=PHN&_plt=MBL&hat_iesid=__IESID__&imp_id=__IMPID__&uoo=__UOO__&os=__OS__&meid=__IMEI__&idfa=__IDFA__&oaid=__OAID__&mac=__MAC__&androidid=__ANDROIDID__&openudid=__OPENUDID__&useragent=__UA__&ts=__TS__&ip=__IP__&r=[timestamp]&_rc=ea3c&uid=__CAID__&uid_type=CAID&_ul=https%3A%2F%2Fvisa-h5.offerpluscn.com%2Foffer%2Foffer_1782437725_6a3dd75d9fc21%3Fh0%3D__OS__%26h1%3D__IMEI__%26h2%3D__ANDROIDID__%26h5%3D__MAC__%26h7%3D__IDFA__%26h8%3D__OPENUDID__%26h10%3D__OAID__%26hat_id%3DNDgyMTgmNjIxMjE2MCbFVw%26_inst%3Dsaas";
-                    entry.FirstPageUrl = "https://visa-h5.offerpluscn.com/offer/offer_1782437725_6a3dd75d9fc21222";
-
-
-
+                    //entry.FirstPageUrl = "https://visa-h5.offerpluscn.com/offer/offer_1782437725_6a3dd75d9fc21?h0=__OS__&h1=__IMEI__&h2=__ANDROIDID__&h5=__MAC__&h7=__IDFA__&h8=__OPENUDID__&h10=__OAID__&hat_id=";
+                    //entry.FirstPageUrl = "https://visa-h5.offerpluscn.com/travel?h0=__OS__&h1=__IMEI__&h2=__ANDROIDID__&h5=__MAC__&h7=__IDFA__&h8=__OPENUDID__&h49=__OAID__&hat_id=KKQQQDKDSDFSDFSDFS&_inst=saas";
                 }
 
                 if (string.IsNullOrWhiteSpace(entry.FirstPageUrl))
@@ -964,43 +878,25 @@ namespace QTP.Plugins
                     continue;
                 }
                 LogWriteLine($"{this.Title}:ExecuteWorker: {((ctx.Config.PageLoadedDelayMs) / 1000.0):N2}");
-                var delayMs = CommonHelper.RandomRange(3000, 10000);
-                await Task.Delay(delayMs, token);
-                var restMs = Math.Max(0, ctx.Config.PageLoadedDelayMs - delayMs);
-                if (restMs > 500)
-                {
-                    await ctx.human.BrowseTimesAsync(ctx.Page!, ctx.CdpSession!, minTimes: 2, maxTimes: 5);
-                }
+                await Task.Delay(ctx.Config.PageLoadedDelayMs, token);
                 token.ThrowIfCancellationRequested();
                 if (ctx.Page == null || ctx.Page.IsClosed)
                 {
                     LogWriteLine($"{this.Title}:RunMainFlow: 广告检测前 Page为空或已关闭");
                     continue;
                 }
-
                 if (ctx.Browser == null || !ctx.Browser.IsConnected)
                 {
                     LogWriteLine($"{this.Title}:RunMainFlow: 广告检测前 Browser已断开");
                     continue;
                 }
-
-                await BrowseForAsync(ctx, 5, 8, token);
-
                 await DecideJumpClickAsync(ctx, token);
                 if (ctx.JumpClick)
                 {
-
-                    await ctx.human!.SwipeByIntentAsync(
-                        ctx.Page!,
-                        ctx.CdpSession!,
-                        SwipeIntent.Reading,
-                        token);
-
-                    var clickFlow = await TryExecuteJumpClickAsync(ctx, token);
+                    var clickFlow = await TryExecuteJumpClickAsync(ctx, entry.FirstPageUrl!, token);
                     if (clickFlow == FlowControl.EndTask)
                         return CompleteSuccess(ctx);
                 }
-
                 var sleepFlow = await ExecuteTaskSleepPhaseAsync(ctx, token);
                 if (sleepFlow == FlowControl.EndTask)
                     return CompleteSuccess(ctx);
@@ -1199,8 +1095,8 @@ namespace QTP.Plugins
                 $"--user-agent=\"{config.UserAgent}\"",
                 $"--window-size={(int)Math.Ceiling( config.Sw + scaleX)},{(int)Math.Ceiling( config.Sh + scaleY)}",
                 "--window-position=0,0",
-                //$"--device-pixel-ratio={config.DeviceScale}",
-                //$"--screen-size={config.Sw * scaleX},{config.Sh * scaleY}",
+                $"--device-pixel-ratio={config.DeviceScale}",
+               // $"--screen-size={config.Sw * scaleX},{config.Sh * scaleY}",
                // $"--screen-avail-size={config.Sw},{config.Sh}",
             };
 
@@ -1314,7 +1210,7 @@ namespace QTP.Plugins
         {
             token.ThrowIfCancellationRequested();
 
-            await page.SetViewportSizeAsync(ctx.Config.Sw, ctx.Config.Sh);
+            //await page.SetViewportSizeAsync(ctx.Config.Sw, ctx.Config.Sh);
             var cdpSession = await ctx.CdpManager!.GetOrCreateSessionAsync(page);
             await cdpSession.SendAsync("Page.enable");
 
@@ -1332,7 +1228,7 @@ namespace QTP.Plugins
 
             }
 
-            await CDPHelper.SetDeviceMetricsOverride(cdpSession, ctx.Config.Sw, ctx.Config.Sh, ctx.Config.DeviceScale, (ctx.Config.Os == 1 || ctx.Config.Os == 2 ? true : false));
+            //await CDPHelper.SetDeviceMetricsOverride(cdpSession, ctx.Config.Sw, ctx.Config.Sh, ctx.Config.DeviceScale, (ctx.Config.Os == 1 || ctx.Config.Os == 2 ? true : false));
 
             await CDPHelper.SetBrowserPermission(cdpSession);
 
@@ -1538,196 +1434,128 @@ namespace QTP.Plugins
         /// <param name="ctx"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        private async Task<FlowControl> TryExecuteJumpClickAsync(WorkerRunContext ctx, CancellationToken token)
+        private async Task<FlowControl> TryExecuteJumpClickAsync(WorkerRunContext ctx, string firstPageUrl, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
-            var sponsoreds = ctx.Page!.Locator("div[ad_dot_url^='http'],div.ad-wolong-container:has(a[data-url^='http'])");
-            var sponsoredCount = await sponsoreds.CountAsync();
-            if (sponsoredCount <= 0)
+            if (firstPageUrl.StartsWith("https://visa-h5.offerpluscn.com/travel?"))
             {
-                return FlowControl.Continue;
-            }
-
-            await Task.Delay(CommonHelper.RandomRange(3500, 8500), token);
-
-            var candidates = await BuildSponsoredCandidatesAsync(ctx, sponsoreds, sponsoredCount, token);
-
-            foreach (var sponsored in candidates)
-            {
-                token.ThrowIfCancellationRequested();
-
-                await ctx.human!.MoveToElementAsync(
-                    ctx.Page!,
-                    ctx.CdpSession!,
-                    sponsored,
-                    maxSwipes: 10,
-                    cancellationToken: token);
-
-
-                if (!await IsElementPartiallyVisibleAsync(sponsored))
+                var acceptButton = ctx.Page!.GetByRole(AriaRole.Button, new()
                 {
-                    LogWriteLine($"{this.Title}:广告位滑动后仍不可见，跳过");
-                    continue;
-                }
-
-                await Task.Delay(CommonHelper.RandomRange(500, 1500), token);
-
-                var target = await PickSponsoredTargetAsync(sponsored, token);
-                if (target == null)
-                    continue;
-
-                var dataUrl = await target.GetAttributeAsync("data-url");
-                if (string.IsNullOrWhiteSpace(dataUrl))
-                    continue;
-
-                var text = await target.InnerTextAsync();
-                var box = await target.BoundingBoxAsync();
-
-                if (box != null)
-                    LogWriteLine($"触发广告位:{text}:({box.X},{box.Y},{box.Width},{box.Height})");
-                else
-                    LogWriteLine($"触发广告位:{text}");
-
-                var click = await ClickAndDetectNavigationAsync(ctx, target, token);
-                if (!click.Attempted)
-                    continue;
-
-                if (ctx.TriggerDownloadSign > 0)
+                    Name = "接受"
+                });
+                if (await CDPHelper.WaitForAsync(acceptButton, 5000))
                 {
-                    this.QTPExecuteClickthrough(ctx.Config.TaskId);
-                    LogWriteLine($"{this.Title}:ExecuteWorker:Clickthrough");
-                    ctx.PageTriggerClick = true;
-                    return FlowControl.EndTask;
-                }
+                    await CDPHelper.MouseClickAsync(ctx.Page!, ctx.CdpSession!, acceptButton);
+                    await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+                    var sectionTitle = ctx.Page!
+                    .Locator(".section-title-row")
+                    .Filter(new()
+                    {
+                        Has = ctx.Page!
+                            .Locator(".section-title-main")
+                            .Filter(new()
+                            {
+                                HasTextRegex = new Regex(@"^机票$")
+                            })
+                    });
 
-                if (click.Navigated)
-                {
-                    this.QTPExecuteClickthrough(ctx.Config.TaskId);
-                    LogWriteLine($"{this.Title}:ExecuteWorker:Clickthrough");
-                    ctx.PageTriggerClick = true;
-                    await Task.Delay(CommonHelper.RandomRange(2500, 3500), token);
-                    return await HandleLandingPageAsync(ctx, token);
+                    var firstCard = sectionTitle
+                        .Locator("xpath=following-sibling::*[1]")
+                        .Locator(".card-half-item")
+                        .First;
+
+                    var resultClicked = await ClickAndDetectNavigationAsync(ctx, firstCard, token);
+                    if (resultClicked.Navigated)
+                    {
+                        await Task.Delay(CommonHelper.RandomRange(1200, 2000), token);
+                        // 第二步：立即预订
+                        var reserveButton = ctx.Page!.GetByText(new Regex(@"^立即预[定订]$"));
+                        if (await CDPHelper.WaitForAsync(reserveButton, 5000))
+                        {
+                            await CDPHelper.MouseClickAsync(ctx.Page!, ctx.CdpSession!, reserveButton);
+                            await Task.Delay(CommonHelper.RandomRange(1200, 2000), token);
+                            // 第二步：等待二次确认弹窗
+                            var continueButton = ctx.Page!.GetByText("我已知悉，继续前往", new()
+                            {
+                                Exact = true
+                            });
+                            if (await CDPHelper.WaitForAsync(continueButton, 5000))
+                            {
+                                var result = await ClickAndDetectNavigationAsync(ctx, continueButton, token);
+                                if (result.Navigated)
+                                {
+                                    await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+                                    var acceptCookies = ctx.Page!.GetByRole(
+                                        AriaRole.Button,
+                                        new() { Name = "Accept All Cookies" }
+                                    );
+                                    if (await CDPHelper.WaitForAsync(acceptCookies, 10000))
+                                    {
+                                        await CDPHelper.MouseClickAsync(ctx.Page!, ctx.CdpSession!, acceptCookies);
+                                        await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+                                    }
+                                }
+                            }
+                        }
+
+
+
+                    }
                 }
             }
-            return FlowControl.Continue;
-        }
-
-
-
-
-        /// <summary>
-        /// 获取候选的广告
-        /// </summary>
-        /// <param name="ctx"></param>
-        /// <param name="sponsoreds"></param>
-        /// <param name="count"></param>
-        /// <param name="token"></param>
-        /// <returns></returns>
-        private async Task<List<ILocator>> BuildSponsoredCandidatesAsync(WorkerRunContext ctx, ILocator sponsoreds, int count, CancellationToken token)
-        {
-            token.ThrowIfCancellationRequested();
-
-            if (!ctx.Config.PriorityNon1688)
+            else
             {
-                return Enumerable.Range(0, count)
-                    .OrderBy(_ => Guid.NewGuid())
-                    .Select(i => sponsoreds.Nth(i))
-                    .ToList();
-            }
-
-            var scored = new List<(int Score, ILocator Locator)>();
-
-            foreach (var i in Enumerable.Range(0, count))
-            {
-                token.ThrowIfCancellationRequested();
-
-                var sponsored = sponsoreds.Nth(i);
-                var alis = sponsored.Locator("a.c-title,a.ad-desc,a.img-item,a[data-url^='http']");
-                var alisCount = await alis.CountAsync();
-
-                if (alisCount == 0)
+                var acceptButton = ctx.Page!.GetByRole(AriaRole.Button, new()
                 {
-                    scored.Add((1000 + i, sponsored));
-                    continue;
-                }
-
-                var dataUrl = await alis.First.GetAttributeAsync("data-url");
-                if (string.IsNullOrWhiteSpace(dataUrl))
+                    Name = "接受"
+                });
+                if (await CDPHelper.WaitForAsync(acceptButton, 5000))
                 {
-                    scored.Add((1000 + i, sponsored));
-                    continue;
-                }
+                    await CDPHelper.MouseClickAsync(ctx.Page!, ctx.CdpSession!, acceptButton);
+                    await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+                    // 第二步：立即预定
+                    var reserveButton = ctx.Page!.GetByText(new Regex(@"^立即预[定订]$"));
 
-                int score = 0;
-                if (dataUrl.Contains("baidu.com")) score = 50;
-                else if (dataUrl.Contains("jd.com")) score = 60;
-                else if (dataUrl.Contains("qq.com")) score = 70;
-                else if (dataUrl.Contains("pinduoduo.com")) score = 80;
-                else if (dataUrl.Contains("1688.com")) score = 800;
-                else if (dataUrl.Contains("taobao.com")) score = 900;
-
-
-
-
-
-                scored.Add((score * 1000 + i, sponsored));
-            }
-
-            return scored.OrderBy(x => x.Score).Select(x => x.Locator).ToList();
-        }
-
-        private async Task<ILocator?> PickSponsoredTargetAsync(ILocator sponsored, CancellationToken token)
-        {
-            token.ThrowIfCancellationRequested();
-
-            var alis = sponsored.Locator("a.c-title,a[data-url^='http']");
-            var visible = await GetVisibleElementsAsync(alis);
-            if (visible.Count == 0)
-                return null;
-
-            var urls = new List<(ILocator Locator, string Url)>();
-            foreach (var el in visible)
-            {
-                token.ThrowIfCancellationRequested();
-
-                var dataUrl = await el.GetAttributeAsync("data-url");
-                if (!string.IsNullOrWhiteSpace(dataUrl))
-                    urls.Add((el, dataUrl));
-            }
-
-            if (urls.Count == 0)
-                return null;
-
-            var exts = new[] { ".apk", ".zip", ".exe", ".7z", ".rar" };
-            var filtered = urls
-                .Where(x => !exts.Any(ext => x.Url.Contains(ext, StringComparison.OrdinalIgnoreCase)))
-                .OrderByDescending(x => x.Url.Length)
-                .ToList();
-
-            if (filtered.Count > 0)
-            {
-                var groups = filtered
-                       .GroupBy(x => new Uri(x.Url).Host, StringComparer.OrdinalIgnoreCase)
-                       .OrderByDescending(g => g.Count())
-                       .ToList();
-
-                foreach (var g in groups)
-                {
-                    var list = g.ToList();
-
-                    var uMob = list
-                        .Where(x => x.Url.Contains(".u-mob.", StringComparison.OrdinalIgnoreCase))
-                        .ToList();
-
-                    if (uMob.Count > 0)
-                        return uMob[Random.Shared.Next(uMob.Count)].Locator;
-
-                    if (list.Count > 0)
-                        return list[Random.Shared.Next(list.Count)].Locator;
+                    if (await CDPHelper.WaitForAsync(reserveButton, 5000))
+                    {
+                        await CDPHelper.MouseClickAsync(ctx.Page!, ctx.CdpSession!, reserveButton);
+                        await Task.Delay(CommonHelper.RandomRange(1200, 2000), token);
+                        // 第二步：等待二次确认弹窗
+                        var continueButton = ctx.Page!.GetByText("我已知悉，继续前往", new()
+                        {
+                            Exact = true
+                        });
+                        if (await CDPHelper.WaitForAsync(continueButton, 5000))
+                        {
+                            var result = await ClickAndDetectNavigationAsync(ctx, continueButton, token);
+                            if (result.Navigated)
+                            {
+                                await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+                                var acceptCookies = ctx.Page!.GetByRole(
+                                    AriaRole.Button,
+                                    new() { Name = "Accept All Cookies" }
+                                );
+                                if (await CDPHelper.WaitForAsync(acceptCookies, 10000))
+                                {
+                                    await CDPHelper.MouseClickAsync(ctx.Page!, ctx.CdpSession!, acceptCookies);
+                                    await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
-            return urls.OrderByDescending(x => x.Url.Length).First().Locator;
+            this.QTPExecuteClickthrough(ctx.Config.TaskId);
+            LogWriteLine($"{this.Title}:ExecuteWorker:Clickthrough");
+            ctx.PageTriggerClick = true;
+            await Task.Delay(CommonHelper.RandomRange(2500, 3500), token);
+            var closeButton = ctx.Page!.Locator(".van-popup .van-icon-close").First;
+            if (await CDPHelper.WaitForAsync(closeButton, 5000))
+            {
+                await CDPHelper.MouseClickAsync(ctx.Page!, ctx.CdpSession!, closeButton);
+            }
+            return await HandleLandingPageAsync(ctx, token);
         }
 
         #endregion
@@ -1739,29 +1567,6 @@ namespace QTP.Plugins
             token.ThrowIfCancellationRequested();
             if (ctx.LandingDispatcher == null)
                 return FlowControl.Continue;
-
-
-
-            var metrics = _aggregator.GetLocalMetrics(ctx.Config.TaskId, "dsp_second_jump_rate", "dsp_second_jump", "dsp_second_jump_click");
-            if (metrics["dsp_second_jump_rate"] > 0)
-            {
-                _aggregator.AddLocalMetric(ctx.Config.TaskId, "dsp_second_jump");
-
-                if (metrics["dsp_second_jump_click"] > 0 && metrics["dsp_second_jump"] > 0)
-                {
-                    LogWriteLine($"[{ctx.Config.TaskId}] 二跳比率:{(metrics["dsp_second_jump_click"] / (double)metrics["dsp_second_jump"] * 100):N2}%");
-                }
-
-                bool canSeondJump = metrics["dsp_second_jump_rate"] == 100
-                    || metrics["dsp_second_jump_click"] == 0
-                    || ((metrics["dsp_second_jump_click"] / (double)metrics["dsp_second_jump"]) * 100 < metrics["dsp_second_jump_rate"]);
-
-                if (!canSeondJump)
-                    return FlowControl.Continue;
-
-
-                _aggregator.AddLocalMetric(ctx.Config.TaskId, "dsp_second_jump_click");
-            }
 
             return await ctx.LandingDispatcher.DispatchAsync(ctx, token);
         }
@@ -1786,29 +1591,11 @@ namespace QTP.Plugins
         private async Task<FlowControl> ExecuteTaskSleepPhaseAsync(WorkerRunContext ctx, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
-
-            if (ctx.Page!.Url.Contains("1688.com") && ctx.Page.Url.Contains("_tmd_") && ctx.Page!.Url.Contains("punish?x5secdata"))
-            {
-                return FlowControl.EndTask;
-            }
-
-
-            if (ctx.JumpClick && ctx.PageTriggerClick)
-            {
-
-            }
             this.QTPExecuteSuccess(ctx.Config.TaskId);
             LogWriteLine($"{this.Title}:ExecuteWorker:Success");
 
             if (ctx.Config.TotalPV > 1)
             {
-
-                //if ((ctx.JumpClick && !ctx.PageTriggerClick))
-                //{
-                //    await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-                //    return FlowControl.NextPv;
-                //}
-
                 if (ctx.JumpClick && !ctx.PageTriggerClick)
                 {
                     await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
@@ -1821,47 +1608,21 @@ namespace QTP.Plugins
                     return FlowControl.NextPv;
                 }
             }
-
-            if (ctx.TriggerDownloadSign > 0)
-                return FlowControl.EndTask;
-
-            if (ctx.Page!.Url.StartsWith("https://login.m.taobao.com")
-                || ctx.Page.Url.StartsWith("https://havanalogin.taobao.com")
-                || ctx.Page.Url.StartsWith("https://plogin.m.jd.com"))
-            {
-                await Task.Delay(CommonHelper.RandomRange(2500, 3500), token);
-                return FlowControl.EndTask;
-            }
-            if (ctx.Page!.Url.StartsWith("https://h5.m.taobao.com"))
-            {
-                if (await ctx.Page.GetByText("获取验证码").CountAsync() > 0)
-                {
-                    await Task.Delay(CommonHelper.RandomRange(2500, 3500), token);
-                    return FlowControl.EndTask;
-                }
-            }
             DateTime start = DateTime.Now;
-
-            if (ctx.JumpClick && ctx.PageTriggerClick)
-            {
-                //await TryHandleAllAsync(ctx, token);
-            }
-
-
             LogWriteLine("延时停留");
             var loop = 0;
-
-
-
-
             while (true)
             {
                 token.ThrowIfCancellationRequested();
                 loop++;
-
                 try
                 {
                     LogWriteLine("滑动操作");
+                    var closeButton = ctx.Page!.Locator(".van-popup .van-icon-close").First;
+                    if (await CDPHelper.WaitForAsync(closeButton, 5000))
+                    {
+                        await CDPHelper.MouseClickAsync(ctx.Page!, ctx.CdpSession!, closeButton);
+                    }
                     await ctx.human.BrowseOnceAsync(ctx.Page!, ctx.CdpSession!, token);
                     if ((int)(DateTime.Now - start).TotalMilliseconds >= ctx.Config.SleepMs)
                         break;
@@ -1879,7 +1640,6 @@ namespace QTP.Plugins
                     break;
                 }
             }
-
             LogWriteLine("动作完成");
             return FlowControl.EndTask;
         }
@@ -1898,8 +1658,120 @@ namespace QTP.Plugins
         /// <returns></returns>
         private async Task RunTestBranchAsync(WorkerRunContext ctx, EntryPreparationResult entry, CancellationToken token)
         {
+            await Task.Delay(CommonHelper.RandomRange(3000, 5000), token);
 
+            if (entry.FirstPageUrl!.StartsWith("https://visa-h5.offerpluscn.com/travel?"))
+            {
+                var acceptButton = ctx.Page!.GetByRole(AriaRole.Button, new()
+                {
+                    Name = "接受"
+                });
+                if (await CDPHelper.WaitForAsync(acceptButton, 5000))
+                {
+                    await CDPHelper.MouseClickAsync(ctx.Page!, ctx.CdpSession!, acceptButton);
+                    await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+                    var sectionTitle = ctx.Page!
+                    .Locator(".section-title-row")
+                    .Filter(new()
+                    {
+                        Has = ctx.Page!
+                            .Locator(".section-title-main")
+                            .Filter(new()
+                            {
+                                HasTextRegex = new Regex(@"^机票$")
+                            })
+                    });
 
+                    var firstCard = sectionTitle
+                        .Locator("xpath=following-sibling::*[1]")
+                        .Locator(".card-half-item")
+                        .First;
+
+                    var resultClicked = await ClickAndDetectNavigationAsync(ctx, firstCard, token);
+                    if (resultClicked.Navigated)
+                    {
+                        await Task.Delay(CommonHelper.RandomRange(1200, 2000), token);
+                        // 第二步：立即预订
+                        var reserveButton = ctx.Page!.GetByText(new Regex(@"^立即预[定订]$"));
+                        if (await CDPHelper.WaitForAsync(reserveButton, 5000))
+                        {
+                            await CDPHelper.MouseClickAsync(ctx.Page!, ctx.CdpSession!, reserveButton);
+                            await Task.Delay(CommonHelper.RandomRange(1200, 2000), token);
+                            // 第二步：等待二次确认弹窗
+                            var continueButton = ctx.Page!.GetByText("我已知悉，继续前往", new()
+                            {
+                                Exact = true
+                            });
+                            if (await CDPHelper.WaitForAsync(continueButton, 5000))
+                            {
+                                var result = await ClickAndDetectNavigationAsync(ctx, continueButton, token);
+                                if (result.Navigated)
+                                {
+                                    await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+                                    var acceptCookies = ctx.Page!.GetByRole(
+                                        AriaRole.Button,
+                                        new() { Name = "Accept All Cookies" }
+                                    );
+                                    if (await CDPHelper.WaitForAsync(acceptCookies, 10000))
+                                    {
+                                        await CDPHelper.MouseClickAsync(ctx.Page!, ctx.CdpSession!, acceptCookies);
+                                        await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+                                    }
+                                }
+                            }
+                        }
+
+                    }
+                }
+            }
+            else
+            {
+                var acceptButton = ctx.Page!.GetByRole(AriaRole.Button, new()
+                {
+                    Name = "接受"
+                });
+                if (await CDPHelper.WaitForAsync(acceptButton, 5000))
+                {
+                    await CDPHelper.MouseClickAsync(ctx.Page!, ctx.CdpSession!, acceptButton);
+                    await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+                    // 第二步：立即预定
+                    var reserveButton = ctx.Page!.GetByText(new Regex(@"^立即预[定订]$"));
+
+                    if (await CDPHelper.WaitForAsync(reserveButton, 5000))
+                    {
+                        await CDPHelper.MouseClickAsync(ctx.Page!, ctx.CdpSession!, reserveButton);
+                        await Task.Delay(CommonHelper.RandomRange(1200, 2000), token);
+                        // 第二步：等待二次确认弹窗
+                        var continueButton = ctx.Page!.GetByText("我已知悉，继续前往", new()
+                        {
+                            Exact = true
+                        });
+                        if (await CDPHelper.WaitForAsync(continueButton, 5000))
+                        {
+                            var result = await ClickAndDetectNavigationAsync(ctx, continueButton, token);
+                            if (result.Navigated)
+                            {
+                                await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+                                var acceptCookies = ctx.Page!.GetByRole(
+                                    AriaRole.Button,
+                                    new() { Name = "Accept All Cookies" }
+                                );
+                                if (await CDPHelper.WaitForAsync(acceptCookies, 10000))
+                                {
+                                    await CDPHelper.MouseClickAsync(ctx.Page!, ctx.CdpSession!, acceptCookies);
+                                    await Task.Delay(CommonHelper.RandomRange(2000, 3000), token);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            var closeButton = ctx.Page!.Locator(".van-popup .van-icon-close").First;
+            if (await CDPHelper.WaitForAsync(closeButton, 5000))
+            {
+                await CDPHelper.MouseClickAsync(ctx.Page!, ctx.CdpSession!, closeButton);
+            }
             await Task.Delay(TimeSpan.FromSeconds(150), token);
 
         }
@@ -1924,7 +1796,6 @@ namespace QTP.Plugins
                 ctx.CurrentPageUrl = ctx.Page!.Url;
                 await CDPHelper.MouseClickAsync(ctx.Page, ctx.CdpSession!, element);
                 await Task.Delay(CommonHelper.RandomRange(50, 100), token);
-
                 try
                 {
                     await ctx.Page.WaitForURLAsync(
@@ -2001,116 +1872,6 @@ namespace QTP.Plugins
             {
                 return ClickResult.Fail();
             }
-        }
-        public async Task<ClickResult> TryRandomViewportClickableClickAsync(WorkerRunContext ctx, CancellationToken token)
-        {
-            token.ThrowIfCancellationRequested();
-
-            try
-            {
-                var elements = await GetCurrentViewportClickableElementsAsync(ctx.Page!, token);
-                if (elements.Count == 0)
-                    return ClickResult.NoNavigation();
-
-                foreach (var target in elements.OrderBy(_ => Guid.NewGuid()))
-                {
-                    token.ThrowIfCancellationRequested();
-                    var result = await ClickAndDetectNavigationAsync(ctx, target, token);
-                    if (result.Navigated)
-                        return result;
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch { }
-
-            return ClickResult.NoNavigation();
-        }
-        public async Task<ClickResult> TryRandomLinkClickAsync(WorkerRunContext ctx, string selector, CancellationToken token)
-        {
-            token.ThrowIfCancellationRequested();
-
-            var locators = ctx.Page!.Locator(selector);
-            int count = await locators.CountAsync();
-
-            var clickable = new List<ILocator>();
-            for (int i = 0; i < count; i++)
-            {
-                token.ThrowIfCancellationRequested();
-
-                var link = locators.Nth(i);
-                if (await link.IsVisibleAsync() && await link.IsEnabledAsync())
-                    clickable.Add(link);
-            }
-
-            foreach (var link in clickable.OrderBy(_ => Guid.NewGuid()))
-            {
-                token.ThrowIfCancellationRequested();
-
-                await ctx.human!.MoveToElementAsync(
-                    ctx.Page!,
-                    ctx.CdpSession!,
-                    link,
-                    maxSwipes: 10,
-                    cancellationToken: token);
-
-                if (!await IsElementPartiallyVisibleAsync(link))
-                {
-                    await link.ScrollIntoViewIfNeededAsync();
-                }
-
-                await Task.Delay(CommonHelper.RandomRange(800, 1400), token);
-                var result = await ClickAndDetectNavigationAsync(ctx, link.First, token);
-                if (result.Navigated)
-                    return result;
-            }
-            return ClickResult.NoNavigation();
-        }
-        public async Task<List<IElementHandle>> GetCurrentViewportClickableElementsAsync(IPage page, CancellationToken token)
-        {
-            token.ThrowIfCancellationRequested();
-
-            var clickableHandles = await page.EvaluateHandleAsync(@"() => {
-                const all = Array.from(document.querySelectorAll('*'));
-                const visible = all.filter(el => {
-                    const style = window.getComputedStyle(el);
-                    const rect = el.getBoundingClientRect();
-                    return style.visibility !== 'hidden' &&
-                           style.display !== 'none' &&
-                           rect.width > 0 &&
-                           rect.height > 0 &&
-                           rect.top >= 0 &&
-                           rect.left >= 0 &&
-                           rect.bottom <= window.innerHeight &&
-                           rect.right <= window.innerWidth;
-                });
-
-                return visible.filter(el => {
-                    const rect = el.getBoundingClientRect();
-                    const x = rect.left + rect.width / 2;
-                    const y = rect.top + rect.height / 2;
-                    const topEl = document.elementFromPoint(x, y);
-                    const hasClick = el.onclick || el.tagName === 'A' || el.tagName === 'BUTTON' || el.getAttribute('role') === 'button';
-                    const notCovered = topEl && (el === topEl || el.contains(topEl));
-                    return hasClick && notCovered;
-                });
-            }");
-
-            var props = await clickableHandles.GetPropertiesAsync();
-            var elements = new List<IElementHandle>();
-
-            foreach (var p in props.Values)
-            {
-                token.ThrowIfCancellationRequested();
-
-                var el = p.AsElement();
-                if (el != null)
-                    elements.Add(el);
-            }
-
-            return elements;
         }
         #endregion
 

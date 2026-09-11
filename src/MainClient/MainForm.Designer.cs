@@ -935,7 +935,7 @@
             Margin = new Padding(6, 5, 6, 5);
             Name = "MainForm";
             StartPosition = FormStartPosition.CenterScreen;
-            Text = "广告测试(1688)-";
+            Text = "广告测试(VISA)-";
             Load += MainForm_Load;
             ((System.ComponentModel.ISupportInitialize)numericUpDown_MainResetTimeout).EndInit();
             ((System.ComponentModel.ISupportInitialize)numericUpDown_Multiple).EndInit();

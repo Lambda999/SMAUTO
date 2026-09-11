@@ -389,6 +389,27 @@ namespace QTP.Common
             return false;
         }
 
+
+
+        public static async Task<bool> WaitForAsync(ILocator element, int timeout)
+        {
+            try
+            {
+                await element.WaitForAsync(new()
+                {
+                    State = WaitForSelectorState.Visible,
+                    Timeout = timeout
+                });
+                return true;
+            }
+            catch (TimeoutException)
+            {
+                return false;
+            }
+        }
+
+
+
         public static async Task<bool> MouseClickAsync(IPage page, ICDPSession cdpSession, ILocator element, int dir = 0, int timeout = 5000, Action<string>? action = null)
         {
             try
