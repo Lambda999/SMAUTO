@@ -1,4 +1,5 @@
-﻿using Microsoft.Playwright;
+﻿using Microsoft.Extensions.Options;
+using Microsoft.Playwright;
 using Newtonsoft.Json.Linq;
 using PlaywrightHumanInput;
 using QTP.Common;
@@ -11,6 +12,7 @@ using SMAd.Models;
 using SMAd.PlaywrightHumanInput;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
+using System.Runtime.Intrinsics.Arm;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
@@ -130,13 +132,21 @@ namespace QTP.Plugins
             return page.EvaluateAsync<bool>("(window.innerHeight + window.pageYOffset) >= document.body.offsetHeight || Math.abs((window.innerHeight + window.pageYOffset) - document.body.offsetHeight) < 10;");
         }
 
-        public async Task BrowseForAsync(WorkerRunContext ctx, int minSeconds = 3, int maxSeconds = 8, CancellationToken token = default)
+        public async Task BrowseForAsync(WorkerRunContext ctx, int minTimes = 3, int maxTimes = 8, CancellationToken token = default)
         {
-            await ctx.human!.BrowseForAsync(
+            //await ctx.human!.BrowseForAsync(
+            //    ctx.Page!,
+            //    ctx.CdpSession!,
+            //    duration: TimeSpan.FromSeconds(CommonHelper.RandomRange(minSeconds, maxSeconds)),
+            //    cancellationToken: token);
+
+            await ctx.human!.BrowseTimesAsync(
                 ctx.Page!,
                 ctx.CdpSession!,
-                duration: TimeSpan.FromSeconds(CommonHelper.RandomRange(minSeconds, maxSeconds)),
+                minTimes: minTimes,
+                maxTimes: maxTimes,
                 cancellationToken: token);
+
         }
 
         public async Task BrowseForAsync(WorkerRunContext ctx, TimeSpan duration, CancellationToken token = default)
@@ -148,6 +158,20 @@ namespace QTP.Plugins
                 cancellationToken: token);
         }
 
+
+        public async Task BrowseTimesAsync(WorkerRunContext ctx,
+            int minTimes = 2,
+            int maxTimes = 5,
+            CancellationToken token = default)
+        {
+            await ctx.human!.BrowseTimesAsync(
+                ctx.Page!,
+                ctx.CdpSession!,
+                minTimes: minTimes,
+                maxTimes: maxTimes,
+                cancellationToken: token);
+
+        }
 
 
 
@@ -1098,25 +1122,29 @@ namespace QTP.Plugins
 
             string brand = ctx.Config.TaskArgs.SelectToken("dev.make")?.Value<string>() ?? "";
             string model = ctx.Config.TaskArgs.SelectToken("dev.model")?.Value<string>() ?? "";
+
+
             // 1. 固定 Seed
-            int seed = StableSeed.Create(ctx.Config.TaskArgs);
-            // 2. 设备硬件特征
-            var touchDevice = TouchDeviceProfiles.ResolveForDesktopCdp(brand, model);
+            int accountSeed = StableSeed.Create(ctx.Config.TaskArgs);
+            var user = HumanUserProfile.CreateRandom(
+            seed: accountSeed,
+            handedness: HumanHandedness.Right);
+            // 2) 不指定 sessionSeed：每次启动都会生成新的会话随机序列。
+            //    因此长期画像一致，但不会重启后重复同一套轨迹。
+            var session = new HumanTouchSession(
+                user,
+                brand,
+                model,
+                desktopCdp: true);
 
-            // 3. 固定的“这个人的操作习惯”
-            var humanProfile = HumanUserProfile.CreateRandom(seed: seed, handedness: HumanHandedness.Right);
-
-            // 4. 创建 Session
-            var session = new HumanTouchSession(humanProfile, touchDevice);
-
-            // 5. Operator
-            ctx.human = new HumanTouchOperator(
-                new HumanTouchOperatorOptions
-                {
-                    Session = session,
-                    DelayFactor = 1.0,
-                    AllowBackReview = true
-                });
+            ctx.human = new HumanTouchOperator(new HumanTouchOperatorOptions
+            {
+                Session = session,
+                DelayFactor = 1.0,
+                AllowBackReview = true,
+                EnablePageContextAwareness = true,
+                PageContextRefreshEveryGestures = 1
+            });
 
 
             int secondJumpRate = 0;
@@ -1277,7 +1305,8 @@ namespace QTP.Plugins
                     var restMs = Math.Max(0, ctx.Config.PageLoadedDelayMs - delayMs);
                     if (restMs > 500)
                     {
-                        await BrowseForAsync(ctx, duration: TimeSpan.FromMilliseconds(restMs), token);
+                        await ctx.human.BrowseTimesAsync(ctx.Page!, ctx.CdpSession!, minTimes: 2, maxTimes: 5);
+                        //await BrowseForAsync(ctx, duration: TimeSpan.FromMilliseconds(restMs), token);
                     }
                 }
 

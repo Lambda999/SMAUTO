@@ -10,6 +10,7 @@
 
 
   <ItemGroup>
+    <ProjectReference Include="..\..\Libraries\HumanTouchP2_Enhanced\HumanTouchP2.Enhanced.csproj" />
     <ProjectReference Include="..\..\Libraries\QTP.Common\QTP.Common.csproj" />
   </ItemGroup>
 
