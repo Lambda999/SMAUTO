@@ -22,10 +22,6 @@ namespace QTP.Plugins
 {
     public sealed class SMAdTask : QTPServiceBase
     {
-
-
-        private const string AliAppDownloadModalCloseSelector = ".androidOpenModal .closeBtn, .iosOpenModal .closeIcon";
-
         private static readonly object CdpFinalFailureLock = new();
         private static int CdpFinalFailureCount;
         private static bool CdpFinalFailureRestartRequested;
@@ -85,19 +81,6 @@ namespace QTP.Plugins
                 || ex.Message.Contains("context has been closed", StringComparison.OrdinalIgnoreCase)
                 || ex.Message.Contains("page has been closed", StringComparison.OrdinalIgnoreCase);
         }
-
-        public static uint GetStableHash(string s)
-        {
-            unchecked
-            {
-                uint hash = 2166136261;
-                foreach (char c in s)
-                {
-                    hash = (hash ^ c) * 16777619;
-                }
-                return hash;
-            }
-        }
         public static QTPPlugin GetInfo()
         {
             return new QTPPlugin()
@@ -107,7 +90,7 @@ namespace QTP.Plugins
                 FileName = "SMAd.dll",
             };
         }
-        public override string Title => "PC1688";
+        public override string Title => "VISA";
         private readonly TaskStatsAggregator _aggregator;
         private readonly AdeHelper _adeHelper;
         private ChromiumSessionManager _processManager;
@@ -115,7 +98,11 @@ namespace QTP.Plugins
         private readonly IPlaywrightProvider _playwrightProvider;
         public SMAdTask(
             IPlaywrightProvider playwrightProvider,
-            TaskStatsAggregator aggregator, ChromiumSessionManager manager, AdeHelper adeHelper, ChineseNameGenerator nameGenerator, AppSettings appSettings) : base(appSettings)
+            TaskStatsAggregator aggregator, 
+            ChromiumSessionManager manager, 
+            AdeHelper adeHelper, 
+            ChineseNameGenerator nameGenerator, 
+            AppSettings appSettings) : base(appSettings)
         {
             _playwrightProvider = playwrightProvider;
             _aggregator = aggregator;
@@ -124,14 +111,6 @@ namespace QTP.Plugins
             _nameGenerator = nameGenerator;
         }
 
-        public static Task<bool> IsPageTop(IPage page)
-        {
-            return page.EvaluateAsync<bool>("window.pageYOffset == 0;");
-        }
-        public static Task<bool> IsPageEnd(IPage page)
-        {
-            return page.EvaluateAsync<bool>("(window.innerHeight + window.pageYOffset) >= document.body.offsetHeight || Math.abs((window.innerHeight + window.pageYOffset) - document.body.offsetHeight) < 10;");
-        }
 
         public async Task BrowseForAsync(WorkerRunContext ctx, int minSeconds = 3, int maxSeconds = 8, CancellationToken token = default)
         {
@@ -157,144 +136,6 @@ namespace QTP.Plugins
                 ctx.Page!,
                 ctx.CdpSession!,
                 cancellationToken: token);
-        }
-
-        public static async Task<bool> IsElementInViewportAsync(ILocator locator)
-        {
-            if (!await locator.IsVisibleAsync())
-            {
-                return false;
-            }
-            return await locator.EvaluateAsync<bool>(@"(element) => {
-            const rect = element.getBoundingClientRect();
-            return (
-              rect.top >= 0 &&
-              rect.left >= 0 &&
-              rect.bottom <= (window.innerHeight || document.documentElement.clientHeight) &&
-              rect.right <= (window.innerWidth || document.documentElement.clientWidth));
-             }");
-        }
-
-        public static async Task<List<ILocator>> GetVisibleElementsAsync(ILocator locator)
-        {
-            var result = new List<ILocator>();
-
-            int count = await locator.CountAsync();
-            if (count == 0)
-                return result;
-            for (int i = 0; i < count; i++)
-            {
-                var el = locator.Nth(i);
-                if (await IsElementInViewportAsync(el))
-                {
-                    result.Add(el);
-                }
-            }
-            return result;
-        }
-
-        /// <summary>
-        /// 下滑前先检查是否接近顶部
-        /// </summary>
-        /// <param name="page"></param>
-        /// <returns></returns>
-        private async Task<double> GetVerticalScrollTopAsync(IPage page)
-        {
-            try
-            {
-                return await page.EvaluateAsync<double>(
-                    @"() => {
-                const se = document.scrollingElement || document.documentElement || document.body;
-                return se ? (se.scrollTop || 0) : 0;
-            }");
-            }
-            catch
-            {
-                return 0;
-            }
-        }
-        /// <summary>
-        /// 下滑前先检查是否接近顶部
-        /// </summary>
-        /// <param name="page"></param>
-        /// <param name="threshold"></param>
-        /// <returns></returns>
-
-        private async Task<bool> IsNearTopAsync(IPage page, double threshold = 8)
-        {
-            try
-            {
-                double top = await GetVerticalScrollTopAsync(page);
-                return top <= threshold;
-            }
-            catch
-            {
-                return true;
-            }
-        }
-
-        /// <summary>
-        /// 启动可追踪的页面弹窗守护。任务使用 Worker token，并在浏览器释放前被等待。
-        /// </summary>
-        public void ProcessingPageElementTask(WorkerRunContext ctx, CancellationToken token)
-        {
-            lock (ctx.PageElementGuardSync)
-            {
-                if (ctx.PageElementGuardTask is { IsCompleted: false })
-                    return;
-
-                ctx.PageElementGuardTask = ProcessPageElementsAsync(ctx, token);
-            }
-        }
-
-        private async Task ProcessPageElementsAsync(WorkerRunContext ctx, CancellationToken token)
-        {
-            while (!token.IsCancellationRequested)
-            {
-                try
-                {
-                    await Task.Delay(CommonHelper.RandomRange(800, 1200), token);
-
-                    var page = ctx.Page;
-                    var cdpSession = ctx.CdpSession;
-                    if (page == null || cdpSession == null)
-                        continue;
-
-                    if (page.IsClosed)
-                        return;
-
-                    var closeBtn = page.Locator(AliAppDownloadModalCloseSelector);
-                    var closeBtnCount = await closeBtn.CountAsync();
-                    for (var index = 0; index < closeBtnCount; index++)
-                    {
-                        token.ThrowIfCancellationRequested();
-                        if (page.IsClosed)
-                            return;
-
-                        var target = closeBtn.Nth(index);
-                        if (!await target.IsVisibleAsync())
-                            continue;
-
-                        await ctx.Human.ClickAsync(page, cdpSession, target, token);
-                        LogWriteLine($"{this.Title}:ProcessPageElements 已关闭1688弹框");
-                        await Task.Delay(CommonHelper.RandomRange(300, 600), token);
-                        break;
-                    }
-                }
-                catch (OperationCanceledException) when (token.IsCancellationRequested)
-                {
-                    return;
-                }
-                catch (PlaywrightException ex) when (IsClosedPlaywrightException(ex))
-                {
-                    LogWriteLine($"{this.Title}:ProcessPageElements 页面已关闭: {ex.Message}");
-                    return;
-                }
-                catch (Exception ex)
-                {
-                    LogWriteLine($"{this.Title}:ProcessPageElements 异常: {ex.Message}");
-                }
-            }
         }
 
         /// <summary>
@@ -357,7 +198,6 @@ namespace QTP.Plugins
 
             }
         }
-
         private static List<string> InitFPArgs(TaskConfig config)
         {
             JToken taskArgs = config.TaskArgs;
@@ -450,115 +290,9 @@ namespace QTP.Plugins
             result.Add("--enable-audio-noise");
             return result;
         }
-
-
         public async Task CloseBrowserProcess(string uniqueId)
         {
             await _processManager.CloseAsync(uniqueId);
-        }
-
-        public async Task<bool> CanPageScrollAsync(IPage page)
-        {
-            if (page == null || page.IsClosed)
-                return false;
-
-            try
-            {
-                return await page.EvaluateAsync<bool>(@"() => {
-
-                    const threshold = 5;
-
-                    // ========= 1. 页面本身是否可滚动 =========
-                    const doc = document.documentElement;
-                    const body = document.body;
-
-                    const pageScrollHeight = Math.max(
-                        doc?.scrollHeight || 0,
-                        body?.scrollHeight || 0
-                    );
-
-                    const pageClientHeight = Math.max(
-                        doc?.clientHeight || 0,
-                        window.innerHeight || 0
-                    );
-
-                    if (pageScrollHeight > pageClientHeight + threshold)
-                        return true;
-
-
-                    // ========= 2. 是否存在可滚动容器 =========
-                    const elements = document.querySelectorAll('*');
-
-                    for (const el of elements) {
-
-                        if (!(el instanceof HTMLElement))
-                            continue;
-
-                        const style = window.getComputedStyle(el);
-
-                        if (
-                            (style.overflowY === 'auto' || style.overflowY === 'scroll') &&
-                            el.scrollHeight > el.clientHeight + threshold
-                        ) {
-                            return true;
-                        }
-                    }
-
-                    return false;
-                }");
-            }
-            catch
-            {
-                return false;
-            }
-        }
-        private sealed class PageScrollState
-        {
-            public double ScrollY { get; set; }
-            public double ClientHeight { get; set; }
-            public double ScrollHeight { get; set; }
-            public bool CanScrollDown { get; set; }
-        }
-
-        private static async Task<PageScrollState> GetPageScrollStateAsync(IPage page)
-        {
-            try
-            {
-                return await page.EvaluateAsync<PageScrollState>(@"() => {
-                    const doc = document.documentElement;
-                    const body = document.body;
-
-                    const scrollY = window.scrollY || window.pageYOffset || doc.scrollTop || body?.scrollTop || 0;
-                    const clientHeight = window.innerHeight || doc.clientHeight || body?.clientHeight || 0;
-                    const scrollHeight = Math.max(
-                        doc.scrollHeight || 0,
-                        body?.scrollHeight || 0,
-                        doc.offsetHeight || 0,
-                        body?.offsetHeight || 0,
-                        doc.clientHeight || 0
-                    );
-
-                    // 留一点容差，避免小数误差导致明明到底了还继续滑
-                    const canScrollDown = (scrollY + clientHeight) < (scrollHeight - 2);
-
-                    return {
-                        scrollY,
-                        clientHeight,
-                        scrollHeight,
-                        canScrollDown
-                    };
-                }");
-            }
-            catch
-            {
-                return new PageScrollState
-                {
-                    ScrollY = 0,
-                    ClientHeight = 0,
-                    ScrollHeight = 0,
-                    CanScrollDown = false
-                };
-            }
         }
 
         private void ResetCdpFinalFailureTracker(string traceTag)
