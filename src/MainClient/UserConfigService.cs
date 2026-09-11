@@ -31,7 +31,6 @@ namespace MainClient
                 appSettings.TaskApiUrl = "http://117.21.200.221/client-v5.php";
                 appSettings.IsHiddenMode = true;
                 appSettings.IsProxyMode = true;
-                appSettings.AutoUpdate = false;
             }
         }
 

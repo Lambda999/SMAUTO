@@ -2,6 +2,7 @@
 using Newtonsoft.Json.Linq;
 using QTP.Common;
 using QTP.Common.Infrastructure;
+using Newtonsoft.Json;
 using System.Collections.Concurrent;
 using System.Threading.Channels;
 
@@ -24,6 +25,62 @@ namespace QTP
         string? Ip = null,
         int Count = 1
     );
+
+    public record AdWord(
+        [property: JsonProperty("category")] string Category,
+        [property: JsonProperty("word")] string Word
+    );
+
+    public enum AdWordStatState
+    {
+        Extracted,
+        Hit
+    }
+
+    public record AdWordStatEvent(
+        string Word,
+        AdWordStatState State,
+        int Count = 1
+    );
+
+    public sealed class AdWordUsageStat
+    {
+        [property: JsonProperty("word")]
+        public string Word { get; set; } = "";
+
+        [property: JsonProperty("extract")]
+        public long Extract { get; set; }
+
+        [property: JsonProperty("hit")]
+        public long Hit { get; set; }
+    }
+
+    public sealed class AdWordUsageAccumulator
+    {
+        public long Extract;
+        public long Hit;
+    }
+
+
+    public sealed class AdKeywordDomain
+    {
+        [property: JsonProperty("keyword")]
+        public string Keyword { get; set; } = "";
+
+        [property: JsonProperty("domains")]
+        public List<string> Domains { get; set; } = new();
+
+        [property: JsonProperty("brands")]
+        public List<string> Brands { get; set; } = new();
+    }
+    public sealed class AdKeywordDomainAccumulator
+    {
+        public HashSet<string> Domains = new(StringComparer.OrdinalIgnoreCase);
+        public HashSet<string> Brands = new(StringComparer.OrdinalIgnoreCase);
+    }
+
+
+
 
     public sealed class TaskStats
     {
@@ -221,8 +278,32 @@ namespace QTP
 
         private readonly Channel<TaskEvent> _queue;
         private readonly Channel<ProxyIpStatEvent> _proxyIpQueue;
+        /// <summary>
+        /// 广告词+类别
+        /// </summary>
+        private readonly Channel<AdWord> _adWordQueue;
+        /// <summary>
+        /// 广告词提取/命中统计
+        /// </summary>
+        private readonly Channel<AdWordStatEvent> _adWordStatQueue;
+        /// <summary>
+        /// 广告词+域名列表
+        /// </summary> 
+        private readonly Channel<AdKeywordDomain> _adKeywordDomainQueue;
+        private readonly object _adKeywordDomainLock = new();
+        // keyword → domains set + brands set
+        private readonly Dictionary<string, AdKeywordDomainAccumulator>
+          _adKeywordDomainBuffer = new(StringComparer.OrdinalIgnoreCase);
+
+
+
         private readonly ConcurrentDictionary<int, TaskStats> _tasks = new();
         private readonly ConcurrentDictionary<int, ProxyIpStat> _taskProxyIpStats = new();
+
+        private readonly object _adWordLock = new();
+        private List<AdWord> _adWordBuffer = new();
+        private readonly object _adWordStatLock = new();
+        private readonly Dictionary<string, AdWordUsageAccumulator> _adWordStatBuffer = new(StringComparer.OrdinalIgnoreCase);
 
         private readonly TaskStats _totalStats = new();
 
@@ -246,16 +327,16 @@ namespace QTP
 
         private CancellationTokenSource? _runCts;
         private readonly SemaphoreSlim _flushSemaphore;
-        private readonly SemaphoreSlim _flushGate = new(1, 1);
         private readonly SemaphoreSlim _lifecycleLock = new(1, 1);
-        private readonly TaskCompletionSource<bool> _stopCompletion =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         private readonly int _retryCount;
         private readonly int _maxConcurrentRequests;
 
         private Task? _processQueueTask;
         private Task? _processProxyIpQueueTask;
+        private Task? _processAdWordQueueTask;
+        private Task? _processAdWordStatQueueTask;
+        private Task? _processAdKeywordDomainQueueTask;
         private Task? _flushLoopTask;
 
         // 0 = new, 1 = running, 2 = stopping, 3 = stopped, 4 = disposed
@@ -292,8 +373,32 @@ namespace QTP
                 AllowSynchronousContinuations = false
             };
 
+            var adWordOptions = new UnboundedChannelOptions
+            {
+                SingleReader = true,
+                SingleWriter = false,
+                AllowSynchronousContinuations = false
+            };
+            var adWordStatOptions = new UnboundedChannelOptions
+            {
+                SingleReader = true,
+                SingleWriter = false,
+                AllowSynchronousContinuations = false
+            };
+
             _queue = Channel.CreateUnbounded<TaskEvent>(taskEventOptions);
             _proxyIpQueue = Channel.CreateUnbounded<ProxyIpStatEvent>(proxyEventOptions);
+            _adWordQueue = Channel.CreateUnbounded<AdWord>(adWordOptions);
+            _adWordStatQueue = Channel.CreateUnbounded<AdWordStatEvent>(adWordStatOptions);
+
+            var adKeywordDomainOptions = new UnboundedChannelOptions
+            {
+                SingleReader = true,
+                SingleWriter = false,
+                AllowSynchronousContinuations = false
+            };
+
+            _adKeywordDomainQueue =Channel.CreateUnbounded<AdKeywordDomain>(adKeywordDomainOptions);
 
             _state = 0;
         }
@@ -318,9 +423,6 @@ namespace QTP
                 if (state == 2)
                     throw new InvalidOperationException("TaskStatsAggregator is stopping and cannot be started.");
 
-                if (state == 3)
-                    throw new InvalidOperationException("TaskStatsAggregator cannot be restarted after it has stopped.");
-
                 if (state == 4)
                     throw new ObjectDisposedException(nameof(TaskStatsAggregator));
 
@@ -328,7 +430,10 @@ namespace QTP
 
                 _processQueueTask = Task.Run(() => ProcessQueueAsync(_runCts.Token));
                 _processProxyIpQueueTask = Task.Run(() => ProcessProxyIpQueueAsync(_runCts.Token));
+                _processAdWordQueueTask = Task.Run(() => ProcessAdWordQueueAsync(_runCts.Token));
+                _processAdWordStatQueueTask = Task.Run(() => ProcessAdWordStatQueueAsync(_runCts.Token));
                 _flushLoopTask = Task.Run(() => FlushLoopAsync(_runCts.Token));
+                _processAdKeywordDomainQueueTask =Task.Run(() => ProcessAdKeywordDomainQueueAsync(_runCts.Token));
 
                 Volatile.Write(ref _state, 1);
             }
@@ -340,7 +445,6 @@ namespace QTP
 
         public async Task StopAsync(CancellationToken cancellationToken = default)
         {
-            Task? existingStop = null;
             await _lifecycleLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
@@ -356,59 +460,46 @@ namespace QTP
                     return;
 
                 if (state == 2)
-                {
-                    existingStop = _stopCompletion.Task;
-                }
-                else
-                {
-                    Volatile.Write(ref _state, 2);
+                    return;
 
-                    _queue.Writer.TryComplete();
-                    _proxyIpQueue.Writer.TryComplete();
-                }
+                Volatile.Write(ref _state, 2);
+
+                _queue.Writer.TryComplete();
+                _proxyIpQueue.Writer.TryComplete();
+                _adWordQueue.Writer.TryComplete();
+                _adWordStatQueue.Writer.TryComplete();
+                _adKeywordDomainQueue.Writer.TryComplete();
             }
             finally
             {
                 _lifecycleLock.Release();
             }
 
-            if (existingStop != null)
-            {
-                await existingStop.WaitAsync(cancellationToken).ConfigureAwait(false);
-                return;
-            }
+            // 先等消费线程尽量把 channel 内数据吃完
+            await WaitConsumersDrainAsync().ConfigureAwait(false);
 
+            // 再做一次停机前强制 flush
+            await FlushOnceAsync(cancellationToken).ConfigureAwait(false);
+
+            // 最后停掉周期 flush
             var cts = _runCts;
-            try
+            if (cts != null)
             {
-                // 先等消费线程尽量把 channel 内数据吃完
-                await WaitConsumersDrainAsync().ConfigureAwait(false);
-
-                // 先停掉周期 flush，避免它与最终 flush 读取并提交同一份 delta。
-                if (cts != null)
+                try
                 {
-                    try
-                    {
-                        cts.Cancel();
-                    }
-                    catch
-                    {
-                    }
+                    cts.Cancel();
                 }
-
-                await WaitBackgroundTasksAsync().ConfigureAwait(false);
-
-                // 后台 flush 已退出，此时最终 flush 不会与它重叠。
-                await FlushOnceAsync(cancellationToken).ConfigureAwait(false);
+                catch
+                {
+                }
             }
-            finally
-            {
-                cts?.Dispose();
-                _runCts = null;
 
-                Volatile.Write(ref _state, 3);
-                _stopCompletion.TrySetResult(true);
-            }
+            await WaitBackgroundTasksAsync().ConfigureAwait(false);
+
+            cts?.Dispose();
+            _runCts = null;
+
+            Volatile.Write(ref _state, 3);
         }
 
         #endregion
@@ -439,10 +530,57 @@ namespace QTP
             _proxyIpQueue.Writer.TryWrite(new ProxyIpStatEvent(taskId, ProxyIpState.Consumed, ip, count));
         }
 
+        public void EnqueueAdWord(string category, string word)
+        {
+            if (!IsStarted)
+                return;
+
+            if (string.IsNullOrWhiteSpace(category) || string.IsNullOrWhiteSpace(word))
+                return;
+
+            _adWordQueue.Writer.TryWrite(new AdWord(category, word));
+        }
+
+        public void EnqueueAdWordExtracted(string word, int count = 1)
+        {
+            EnqueueAdWordStat(word, AdWordStatState.Extracted, count);
+        }
+
+        public void EnqueueAdWordHit(string word, int count = 1)
+        {
+            EnqueueAdWordStat(word, AdWordStatState.Hit, count);
+        }
+
+        private void EnqueueAdWordStat(string word, AdWordStatState state, int count)
+        {
+            if (!IsStarted)
+                return;
+
+            if (string.IsNullOrWhiteSpace(word) || count <= 0)
+                return;
+
+            _adWordStatQueue.Writer.TryWrite(new AdWordStatEvent(word, state, count));
+        }
+        public void EnqueueAdKeywordDomain(AdKeywordDomain item)
+        {
+            if (!IsStarted)
+                return;
+
+            if (item == null ||
+                string.IsNullOrWhiteSpace(item.Keyword) ||
+                item.Domains == null ||
+                item.Domains.Count == 0)
+                return;
+
+            _adKeywordDomainQueue.Writer.TryWrite(item);
+        }
+
+
         public TaskStats? GetTaskStats(int taskId)
             => _tasks.TryGetValue(taskId, out var stats) ? stats : null;
 
         public TaskStats GetTotalStats() => _totalStats;
+
 
         public async Task<double> GetClickRatioAsync(int taskId, double taskCtr = 100)
         {
@@ -558,6 +696,90 @@ namespace QTP
             }
         }
 
+        private async Task ProcessAdWordQueueAsync(CancellationToken token)
+        {
+            try
+            {
+                while (await _adWordQueue.Reader.WaitToReadAsync(token).ConfigureAwait(false))
+                {
+                    while (_adWordQueue.Reader.TryRead(out var adWord))
+                    {
+                        lock (_adWordLock)
+                        {
+                            _adWordBuffer.Add(adWord);
+                        }
+                    }
+                }
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "ProcessAdWordQueueAsync crashed.");
+            }
+        }
+        private async Task ProcessAdKeywordDomainQueueAsync(CancellationToken token)
+        {
+            try
+            {
+                while (await _adKeywordDomainQueue.Reader.WaitToReadAsync(token))
+                {
+                    while (_adKeywordDomainQueue.Reader.TryRead(out var item))
+                    {
+                        lock (_adKeywordDomainLock)
+                        {
+                            if (!_adKeywordDomainBuffer.TryGetValue(item.Keyword, out var acc))
+                            {
+                                acc = new AdKeywordDomainAccumulator();
+                                _adKeywordDomainBuffer[item.Keyword] = acc;
+                            }
+
+                            foreach (var d in item.Domains)
+                                acc.Domains.Add(d);
+
+                            foreach (var b in item.Brands)
+                                acc.Brands.Add(b);
+                        }
+                    }
+                }
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "ProcessAdKeywordDomainQueueAsync crashed.");
+            }
+        }
+        private async Task ProcessAdWordStatQueueAsync(CancellationToken token)
+        {
+            try
+            {
+                while (await _adWordStatQueue.Reader.WaitToReadAsync(token).ConfigureAwait(false))
+                {
+                    while (_adWordStatQueue.Reader.TryRead(out var item))
+                    {
+                        lock (_adWordStatLock)
+                        {
+                            if (!_adWordStatBuffer.TryGetValue(item.Word, out var acc))
+                            {
+                                acc = new AdWordUsageAccumulator();
+                                _adWordStatBuffer[item.Word] = acc;
+                            }
+
+                            if (item.State == AdWordStatState.Extracted)
+                                acc.Extract += item.Count;
+                            else
+                                acc.Hit += item.Count;
+                        }
+                    }
+                }
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "ProcessAdWordStatQueueAsync crashed.");
+            }
+        }
+
+
         #endregion
 
         #region Flush
@@ -586,60 +808,53 @@ namespace QTP
         /// </summary>
         public async Task FlushOnceAsync(CancellationToken token = default)
         {
-            await _flushGate.WaitAsync(token).ConfigureAwait(false);
-            try
+            var flushTasks = new List<Task>(64);
+
+            foreach (var pair in _tasks)
             {
-                var flushTasks = new List<Task>(64);
+                int taskId = pair.Key;
+                TaskStats stats = pair.Value;
 
-                foreach (var pair in _tasks)
-                {
-                    int taskId = pair.Key;
-                    TaskStats stats = pair.Value;
+                var delta = stats.SnapshotDelta();
+                if (delta.IsEmpty)
+                    continue;
 
-                    var delta = stats.SnapshotDelta();
-                    if (delta.IsEmpty)
-                        continue;
+                var metrics = stats.ToMetricDictionary(delta);
+                if (metrics.Count == 0)
+                    continue;
 
-                    var metrics = stats.ToMetricDictionary(delta);
-                    if (metrics.Count == 0)
-                        continue;
-
-                    flushTasks.Add(FlushTaskStatsAsync(taskId, stats, delta, metrics, token));
-                }
-
-                foreach (var pair in _taskProxyIpStats)
-                {
-                    int taskId = pair.Key;
-                    ProxyIpStat stat = pair.Value;
-
-                    var snapshot = stat.Snapshot();
-                    if (snapshot.IsEmpty)
-                        continue;
-
-                    var metrics = new Dictionary<string, long>(2);
-                    if (snapshot.Fetched > 0) metrics["fetched"] = snapshot.Fetched;
-                    if (snapshot.Consumed > 0) metrics["consumed"] = snapshot.Consumed;
-
-                    flushTasks.Add(FlushProxyIpAsync(taskId, stat, snapshot, metrics, token));
-                }
-
-                {
-                    var delta = _totalStats.SnapshotDelta();
-                    if (!delta.IsEmpty)
-                    {
-                        var metrics = _totalStats.ToMetricDictionary(delta);
-                        if (metrics.Count > 0)
-                            flushTasks.Add(FlushTotalStatsAsync(delta, metrics, token));
-                    }
-                }
-
-                if (flushTasks.Count > 0)
-                    await Task.WhenAll(flushTasks).ConfigureAwait(false);
+                flushTasks.Add(FlushTaskStatsAsync(taskId, stats, delta, metrics, token));
             }
-            finally
+
+            foreach (var pair in _taskProxyIpStats)
             {
-                _flushGate.Release();
+                int taskId = pair.Key;
+                ProxyIpStat stat = pair.Value;
+
+                var snapshot = stat.Snapshot();
+                if (snapshot.IsEmpty)
+                    continue;
+
+                var metrics = new Dictionary<string, long>(2);
+                if (snapshot.Fetched > 0) metrics["fetched"] = snapshot.Fetched;
+                if (snapshot.Consumed > 0) metrics["consumed"] = snapshot.Consumed;
+
+                flushTasks.Add(FlushProxyIpAsync(taskId, stat, snapshot, metrics, token));
             }
+
+            {
+                var delta = _totalStats.SnapshotDelta();
+                if (!delta.IsEmpty)
+                {
+                    var metrics = _totalStats.ToMetricDictionary(delta);
+                    if (metrics.Count > 0)
+                        flushTasks.Add(FlushTotalStatsAsync(delta, metrics, token));
+                }
+            }
+
+
+            if (flushTasks.Count > 0)
+                await Task.WhenAll(flushTasks).ConfigureAwait(false);
         }
 
         private async Task FlushTaskStatsAsync(
@@ -724,6 +939,7 @@ namespace QTP
                 _flushSemaphore.Release();
             }
         }
+ 
         #endregion
 
         #region Retry / Stop Helpers
@@ -761,10 +977,13 @@ namespace QTP
 
         private async Task WaitConsumersDrainAsync()
         {
-            var tasks = new List<Task>(2);
+            var tasks = new List<Task>(3);
 
             if (_processQueueTask != null) tasks.Add(_processQueueTask);
             if (_processProxyIpQueueTask != null) tasks.Add(_processProxyIpQueueTask);
+            if (_processAdWordQueueTask != null) tasks.Add(_processAdWordQueueTask);
+            if (_processAdWordStatQueueTask != null) tasks.Add(_processAdWordStatQueueTask);
+            if (_processAdKeywordDomainQueueTask != null) tasks.Add(_processAdKeywordDomainQueueTask);
 
             if (tasks.Count > 0)
                 await Task.WhenAll(tasks).ConfigureAwait(false);
@@ -772,10 +991,13 @@ namespace QTP
 
         private async Task WaitBackgroundTasksAsync()
         {
-            var tasks = new List<Task>(3);
+            var tasks = new List<Task>(4);
 
             if (_processQueueTask != null) tasks.Add(_processQueueTask);
             if (_processProxyIpQueueTask != null) tasks.Add(_processProxyIpQueueTask);
+            if (_processAdWordQueueTask != null) tasks.Add(_processAdWordQueueTask);
+            if (_processAdWordStatQueueTask != null) tasks.Add(_processAdWordStatQueueTask);
+            if (_processAdKeywordDomainQueueTask != null) tasks.Add(_processAdKeywordDomainQueueTask);
             if (_flushLoopTask != null) tasks.Add(_flushLoopTask);
 
             if (tasks.Count == 0)
@@ -1027,7 +1249,6 @@ namespace QTP
                 Volatile.Write(ref _state, 4);
 
                 _flushSemaphore.Dispose();
-                _flushGate.Dispose();
                 _lifecycleLock.Dispose();
 
                 foreach (var gate in _baselineInitLocks.Values)

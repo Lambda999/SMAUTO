@@ -6,10 +6,17 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <Compile Remove="LandingPolicy\AiSiteLandingPageStrategy.cs" />
+    <Compile Remove="LandingPolicy\AiStudyLandingPageStrategy.cs" />
+    <Compile Remove="LandingPolicy\UMobLandingPageStrategy.cs" />
+  </ItemGroup>
+
  
 
 
   <ItemGroup>
+    <ProjectReference Include="..\..\Libraries\HumanTouchP2_Enhanced\HumanTouchP2.Enhanced.csproj" />
     <ProjectReference Include="..\..\Libraries\QTP.Common\QTP.Common.csproj" />
   </ItemGroup>
 

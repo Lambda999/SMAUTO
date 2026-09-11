@@ -73,15 +73,11 @@
             tabPage1 = new TabPage();
             label17 = new Label();
             comboBox_Protocol = new ComboBox();
-            checkBox_AutoUpdate = new CheckBox();
             button3 = new Button();
             button2 = new Button();
             button6 = new Button();
             checkBox_IsTest = new CheckBox();
             btnStartStop = new Button();
-            label43 = new Label();
-            comboBox_VersionList = new ComboBox();
-            btnUpdate = new Button();
             checkBox_PVsTriggerOne = new CheckBox();
             checkBox_Incognito = new CheckBox();
             label30 = new Label();
@@ -531,15 +527,11 @@
             // 
             tabPage1.Controls.Add(label17);
             tabPage1.Controls.Add(comboBox_Protocol);
-            tabPage1.Controls.Add(checkBox_AutoUpdate);
             tabPage1.Controls.Add(button3);
             tabPage1.Controls.Add(button2);
             tabPage1.Controls.Add(button6);
             tabPage1.Controls.Add(checkBox_IsTest);
             tabPage1.Controls.Add(btnStartStop);
-            tabPage1.Controls.Add(label43);
-            tabPage1.Controls.Add(comboBox_VersionList);
-            tabPage1.Controls.Add(btnUpdate);
             tabPage1.Controls.Add(groupBox6);
             tabPage1.Controls.Add(checkBox_PVsTriggerOne);
             tabPage1.Controls.Add(checkBox_Incognito);
@@ -618,17 +610,6 @@
             comboBox_Protocol.Size = new Size(116, 28);
             comboBox_Protocol.TabIndex = 201;
             // 
-            // checkBox_AutoUpdate
-            // 
-            checkBox_AutoUpdate.AutoSize = true;
-            checkBox_AutoUpdate.Location = new Point(410, 324);
-            checkBox_AutoUpdate.Margin = new Padding(4);
-            checkBox_AutoUpdate.Name = "checkBox_AutoUpdate";
-            checkBox_AutoUpdate.Size = new Size(91, 24);
-            checkBox_AutoUpdate.TabIndex = 197;
-            checkBox_AutoUpdate.Text = "自动更新";
-            checkBox_AutoUpdate.UseVisualStyleBackColor = true;
-            // 
             // button3
             // 
             button3.ForeColor = Color.Red;
@@ -686,41 +667,10 @@
             btnStartStop.UseVisualStyleBackColor = true;
             btnStartStop.Click += btnStartStop_Click;
             // 
-            // label43
-            // 
-            label43.AutoSize = true;
-            label43.Location = new Point(50, 327);
-            label43.Margin = new Padding(6, 0, 6, 0);
-            label43.Name = "label43";
-            label43.Size = new Size(73, 20);
-            label43.TabIndex = 181;
-            label43.Text = "更新列表:";
-            // 
-            // comboBox_VersionList
-            // 
-            comboBox_VersionList.DropDownStyle = ComboBoxStyle.DropDownList;
-            comboBox_VersionList.FormattingEnabled = true;
-            comboBox_VersionList.Location = new Point(127, 322);
-            comboBox_VersionList.Margin = new Padding(4, 2, 4, 2);
-            comboBox_VersionList.Name = "comboBox_VersionList";
-            comboBox_VersionList.Size = new Size(208, 28);
-            comboBox_VersionList.TabIndex = 180;
-            // 
-            // btnUpdate
-            // 
-            btnUpdate.Location = new Point(342, 321);
-            btnUpdate.Margin = new Padding(4);
-            btnUpdate.Name = "btnUpdate";
-            btnUpdate.Size = new Size(65, 30);
-            btnUpdate.TabIndex = 179;
-            btnUpdate.Text = "更新";
-            btnUpdate.UseVisualStyleBackColor = true;
-            btnUpdate.Click += btnUpdate_Click;
-            // 
             // checkBox_PVsTriggerOne
             // 
             checkBox_PVsTriggerOne.AutoSize = true;
-            checkBox_PVsTriggerOne.Location = new Point(131, 390);
+            checkBox_PVsTriggerOne.Location = new Point(133, 362);
             checkBox_PVsTriggerOne.Margin = new Padding(6);
             checkBox_PVsTriggerOne.Name = "checkBox_PVsTriggerOne";
             checkBox_PVsTriggerOne.Size = new Size(202, 24);
@@ -762,7 +712,7 @@
             // checkBox_UVsTriggerOne
             // 
             checkBox_UVsTriggerOne.AutoSize = true;
-            checkBox_UVsTriggerOne.Location = new Point(131, 362);
+            checkBox_UVsTriggerOne.Location = new Point(131, 326);
             checkBox_UVsTriggerOne.Margin = new Padding(6);
             checkBox_UVsTriggerOne.Name = "checkBox_UVsTriggerOne";
             checkBox_UVsTriggerOne.Size = new Size(204, 24);
@@ -1073,9 +1023,6 @@
         private ComboBox comboBox_KernelVersion;
         private CheckBox checkBox_Incognito;
         private CheckBox checkBox_PVsTriggerOne;
-        private Label label43;
-        private ComboBox comboBox_VersionList;
-        private Button btnUpdate;
         private ToolStripProgressBar toolStripProgressBarDownload;
         private Button btnStartStop;
         private ToolStripStatusLabel lblStatus;
@@ -1083,7 +1030,6 @@
         private Button button6;
         private Button button2;
         private Button button3;
-        private CheckBox checkBox_AutoUpdate;
         private Label label17;
         private ComboBox comboBox_Protocol;
     }

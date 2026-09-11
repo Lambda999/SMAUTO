@@ -521,26 +521,6 @@ namespace MainClient
 
 
         #region 自动更新
-        private async Task HandleStartupAutomationAsync(FileVersionInfo? latestVersion)
-        {
-            if (Interlocked.Exchange(ref _startupAutomationTriggered, 1) == 1)
-            {
-                return;
-            }
-            if (!_appSettings.AutoUpdate)
-            {
-                return;
-            }
-
-            try
-            {
-
-                await ExecuteUpdateAsync(isAutoUpdate: true, selectedFile: latestVersion);
-            }
-            catch (Exception)
-            {
-            }
-        }
 
         private void TriggerStartTask()
         {
@@ -552,102 +532,6 @@ namespace MainClient
                 }
             });
         }
-
-        private async Task<bool> ExecuteUpdateAsync(bool isAutoUpdate, FileVersionInfo? selectedFile = null)
-        {
-            if (selectedFile == null)
-            {
-                _logger.LogInformation(isAutoUpdate ? "自动更新未找到可用版本。" : "请先选择要更新的版本！");
-                return false;
-            }
-
-            this.InvokeOnUiThreadIfRequired(() =>
-            {
-                btnUpdate.Enabled = false;
-                toolStripProgressBarDownload.AutoSize = false;
-                toolStripProgressBarDownload.Width = 300;
-                toolStripProgressBarDownload.Visible = true;
-            });
-
-            double lastReportedProgress = 0;
-            const double minProgressStep = 1;
-            DateTime lastProgressUpdate = DateTime.Now;
-            var progressUpdateInterval = TimeSpan.FromMilliseconds(1000);
-            EventHandler<ProgressEventArgs> handler = (s, e) =>
-            {
-                bool isProgressTooSmall = Math.Abs(e.Progress - lastReportedProgress) < minProgressStep;
-                bool isTooSoon = DateTime.Now - lastProgressUpdate < progressUpdateInterval;
-                bool notFinished = e.Progress < 100;
-
-                if (isProgressTooSmall && isTooSoon && notFinished)
-                {
-                    return;
-                }
-
-                lastReportedProgress = e.Progress;
-                lastProgressUpdate = DateTime.Now;
-                _logger.LogInformation(e.Message);
-                this.InvokeOnUiThreadIfRequired(() =>
-                {
-                    toolStripProgressBarDownload.Value = (int)Math.Min(Math.Max(e.Progress, 0), 100);
-                });
-            };
-
-            _fileUpdater.ProgressChanged -= handler;
-            _fileUpdater.ProgressChanged += handler;
-
-            try
-            {
-                try
-                {
-                    var smaideZip = await _fileUpdater.DownloadBootstrapAsync(_appSettings.TaskApiUrl);
-                    var smaideDir = Directory.GetParent(AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))?.FullName!;
-                    ZipFile.ExtractToDirectory(smaideZip, smaideDir, true);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "下载或解压引导更新程序失败，继续执行主程序更新。");
-                }
-
-                this.InvokeOnUiThreadIfRequired(() =>
-                {
-                    toolStripProgressBarDownload.Width = 60;
-                    toolStripProgressBarDownload.Visible = false;
-                });
-
-                var zipFilePath = await _fileUpdater.DownloadFileAsync(_appSettings.TaskApiUrl, selectedFile);
-                string updaterPath = Path.Combine(Directory.GetParent(AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))?.FullName!, "smaide.exe");
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = updaterPath,
-                    Arguments = $"--update-version \"{Process.GetCurrentProcess().MainModule?.FileName}\" \"{zipFilePath}\" \"v{AppConsts.AppVersion}\" \"{selectedFile.Text}\"",
-                    WorkingDirectory = Path.GetDirectoryName(updaterPath),
-                    UseShellExecute = false,
-                });
-
-                Application.Exit();
-                return true;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, isAutoUpdate ? "自动更新失败" : "手动更新失败");
-                return false;
-            }
-            finally
-            {
-                _fileUpdater.ProgressChanged -= handler;
-                this.InvokeOnUiThreadIfRequired(() =>
-                {
-                    if (!IsDisposed && !Disposing)
-                    {
-                        btnUpdate.Enabled = true;
-                        toolStripProgressBarDownload.Width = 60;
-                        toolStripProgressBarDownload.Visible = false;
-                    }
-                });
-            }
-        }
-
         #endregion
 
 
@@ -765,18 +649,6 @@ namespace MainClient
             Task.Run(async () =>
             {
                 CommonHelper.ClearLocalChromeProcesses();
-                var latestFileList = await GetLatestFileWithVersionAsync();
-                if (latestFileList.Count > 0)
-                {
-                    this.InvokeOnUiThreadIfRequired(() =>
-                    {
-                        comboBox_VersionList.DataSource = null;
-                        comboBox_VersionList.DisplayMember = "Text";
-                        comboBox_VersionList.ValueMember = "File";
-                        comboBox_VersionList.DataSource = latestFileList;
-                        comboBox_VersionList.SelectedIndex = 0;
-                    });
-                }
                 try
                 {
                     await InitBrowserVersionListAsync();
@@ -791,11 +663,6 @@ namespace MainClient
                 if (isRestart)
                 {
                     TriggerStartTask();
-                }
-
-                if (latestFileList.Count > 0)
-                {
-                    await HandleStartupAutomationAsync(latestFileList.FirstOrDefault());
                 }
 
                 this.InvokeOnUiThreadIfRequired(() =>
@@ -905,7 +772,6 @@ namespace MainClient
             comboBox_KernelVersion.Text = _appSettings.KernelVersion;
             checkBox_Incognito.Checked = _appSettings.Incognito;
             checkBox_IsTest.Checked = _appSettings.IsTest;
-            checkBox_AutoUpdate.Checked = _appSettings.AutoUpdate;
             comboBox_Protocol.Text = _appSettings.Protocol ?? "http";
         }
         private static object lock_config = new object();
@@ -941,7 +807,6 @@ namespace MainClient
                 _appSettings.KernelVersion = comboBox_KernelVersion.Text;
                 _appSettings.Incognito = checkBox_Incognito.Checked;
                 _appSettings.IsTest = checkBox_IsTest.Checked;
-                _appSettings.AutoUpdate = checkBox_AutoUpdate.Checked;
                 _appSettings.Protocol = comboBox_Protocol.Text;
 
                 UserConfigService.Save("AppSettings", _appSettings);
@@ -1002,26 +867,6 @@ namespace MainClient
 
         }
 
-        private async void btnUpdate_Click(object sender, EventArgs e)
-        {
-            if (comboBox_VersionList.Items.Count == 0)
-            {
-                _logger.LogInformation("无可用的更新版本！");
-                return;
-            }
-            if (comboBox_VersionList.SelectedItem == null)
-            {
-                _logger.LogInformation("请先选择要更新的版本！");
-                return;
-            }
-            var selectedFile = comboBox_VersionList.SelectedItem as FileVersionInfo;
-            if (selectedFile == null)
-            {
-                _logger.LogInformation("请先选择要更新的版本！");
-                return;
-            }
-            await ExecuteUpdateAsync(isAutoUpdate: false, selectedFile: selectedFile);
-        }
 
 
         /// <summary>

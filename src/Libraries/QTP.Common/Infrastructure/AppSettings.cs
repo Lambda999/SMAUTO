@@ -30,6 +30,7 @@
         public string PVOverride { get; set; }
 
         public int IpTtl { get; set; }
+
         /// <summary>
         /// 多UV时,仅触发1个广告位
         /// </summary>
@@ -55,18 +56,9 @@
         public bool IsTest { get; set; }
 
         /// <summary>
-        /// 启动时是否自动执行应用更新
-        /// </summary>
-        public bool AutoUpdate { get; set; }
-
-        /// <summary>
         /// 代理协议:http/socks5
         /// </summary>
         public string Protocol { get; set; } = "http";
-
-
-
-
 
 
 

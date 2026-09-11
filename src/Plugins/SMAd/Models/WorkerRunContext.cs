@@ -1,7 +1,6 @@
 ﻿using Microsoft.Playwright;
 using PlaywrightHumanInput;
 using QTP.Plugins;
-using SMAd.HumanInput;
 using SMAd.LandingPolicy;
 
 namespace SMAd.Models
@@ -40,15 +39,10 @@ namespace SMAd.Models
         public string? ProxyFailedReason { get; set; }
         public bool PageCrashed { get; set; }
         public string? LastFailureReason { get; set; }
-        public bool ExecutionStarted { get; set; }
-        public bool CompletionReported { get; set; }
-        public int SuccessfulPvCount { get; set; }
-        public int LastSuccessfulPvIndex { get; set; }
 
-        public object PageElementGuardSync { get; } = new();
-        public Task? PageElementGuardTask { get; set; }
+        public int PageElementGuardStarted;
 
-        public IHumanInputOperator Human { get; set; } = default!;
+        public HumanTouchOperator human { get; set; }
 
         public void ResetPerPvState()
         {
